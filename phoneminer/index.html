@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Blockchain Charge Miner</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1, h3 { color: #333; }
+    form { margin-bottom: 20px; }
+    label { display: block; margin: 5px 0; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 6px; font-size: 14px; vertical-align: top; }
+    th { background: #f4f4f4; }
+    pre { background: #fafafa; padding: 10px; border: 1px solid #ddd; max-height: 300px; overflow-y: auto; }
+    .tx { background: #eef; margin: 5px 0; padding: 4px; border-left: 3px solid #88f; font-size: 13px; }
+    #status { color: green; font-size: 12px; margin-top: 5px; }
+    #txFeed { background: #111; color: #0f0; font-family: monospace; padding: 10px; border-radius: 6px;
+              max-height: 200px; overflow-y: auto; }
+    #txFeed div { margin: 4px 0; }
+  </style>
+</head>
+<body>
+  <h1>Blockchain Charge Miner</h1>
+
+  <form id="chargeForm">
+    <label>From Number: <input type="text" id="fromNumber" placeholder="+15551234567" required></label>
+    <label>To Number: <input type="text" id="toNumber" placeholder="+15557654321" required></label>
+    <label>Amount USD: <input type="number" id="amountUSD" value="0.01" step="0.01" required></label>
+    <button type="submit">Charge & Mine Block</button>
+  </form>
+
+  <h3>Result:</h3>
+  <pre id="result"></pre>
+
+  <button id="viewChain">View Blockchain Now</button>
+  <div id="status"></div>
+
+  <h3>Live Transaction Feed (Last 10)</h3>
+  <div id="txFeed"></div>
+
+  <h3>Blockchain Table:</h3>
+  <div id="chainTable"></div>
+
+  <h3>Raw Blockchain JSON:</h3>
+  <pre id="chainDump"></pre>
+
+  <script>
+    const form = document.getElementById('chargeForm');
+    const resultEl = document.getElementById('result');
+    const chainDump = document.getElementById('chainDump');
+    const chainTable = document.getElementById('chainTable');
+    const viewBtn = document.getElementById('viewChain');
+    const statusEl = document.getElementById('status');
+    const txFeed = document.getElementById('txFeed');
+
+    // Charge + mine
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      const fromNumber = document.getElementById('fromNumber').value.trim();
+      const toNumber = document.getElementById('toNumber').value.trim();
+      const amountUSD = parseFloat(document.getElementById('amountUSD').value);
+      const USD_PER_BYTE = 0.000000000000181873;
+      const bytes = Math.floor(amountUSD / USD_PER_BYTE);
+
+      try {
+        const res = await fetch('/api/charge-and-notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fromNumber, toNumber, amountUSD, bytes })
+        });
+        const data = await res.json();
+        resultEl.textContent = JSON.stringify(data, null, 2);
+        refreshChain();
+      } catch (err) {
+        resultEl.textContent = 'Error: ' + err;
+      }
+    });
+
+    async function refreshChain() {
+      try {
+        const res = await fetch('/api/chain');
+        const chain = await res.json();
+        chainDump.textContent = JSON.stringify(chain, null, 2);
+
+        // Table
+        let html = `<table>
+          <tr><th>Index</th><th>Timestamp</th><th>Nonce</th><th>Prev Hash</th><th>Hash</th><th>Transactions</th></tr>`;
+        chain.forEach(block => {
+          html += `<tr>
+            <td>${block.index}</td>
+            <td>${new Date(block.timestamp).toLocaleString()}</td>
+            <td>${block.nonce}</td>
+            <td style="word-break:break-all;max-width:200px;">${block.previousHash}</td>
+            <td style="word-break:break-all;max-width:200px;">${block.hash}</td>
+            <td>${block.transactions.map(tx =>
+              `<div class="tx">From: ${tx.fromNumber}<br>
+               To: ${tx.toNumber}<br>
+               Amount: $${tx.amountUSD.toFixed(2)}<br>
+               Bytes: ${tx.bytes}</div>`).join('')}</td>
+          </tr>`;
+        });
+        html += `</table>`;
+        chainTable.innerHTML = html;
+
+        // Live feed (last 10)
+        const allTxs = chain.flatMap(b => b.transactions)
+                             .sort((a,b) => b.timestamp - a.timestamp)
+                             .slice(0, 10);
+        txFeed.innerHTML = allTxs.map(tx =>
+          `<div>[${new Date(tx.timestamp).toLocaleTimeString()}] 
+           ${tx.fromNumber} ➜ ${tx.toNumber} 
+           $${tx.amountUSD.toFixed(2)} (${tx.bytes} bytes)</div>`).join('');
+
+        statusEl.textContent = "⟳ Last updated: " + new Date().toLocaleTimeString();
+      } catch (err) {
+        chainDump.textContent = 'Error: ' + err;
+      }
+    }
+
+    viewBtn.addEventListener('click', refreshChain);
+    refreshChain();
+    setInterval(refreshChain, 10000);
+  </script>
+</body>
+</html>
